@@ -2,7 +2,7 @@ global.jQuery = require('jquery');
 require('bootstrap');
 var QRCode = require('qrcode')
 
-import * as wasm from "zecpaperwallet";
+import * as wasm from "yecpaperwallet";
 
 var address_number = 0;
 function add_section(wallet_item) {
@@ -11,7 +11,7 @@ function add_section(wallet_item) {
             <div class="col-sm-9" style="word-break: break-word;">
                 <h1> Address 
                 ${(() => {
-                    if (wallet_item["address"].startsWith("z")) { return "(Sapling)"; }
+                    if (wallet_item["address"].startsWith("y")) { return "(Sapling)"; }
                     else { return "(Transparent)"; }
                    }) ()
                 }
