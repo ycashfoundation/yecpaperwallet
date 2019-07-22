@@ -16,7 +16,7 @@ use printpdf::*;
  * Save the list of wallets (address + private keys) to the given PDF file name.
  */
 pub fn save_to_pdf(is_testnet: bool, addresses: &str, filename: &str) -> Result<(), String> {
-    let (doc, page1, layer1) = PdfDocument::new("Zec Sapling Paper Wallet", Mm(210.0), Mm(297.0), "Layer 1");
+    let (doc, page1, layer1) = PdfDocument::new("Yec Sapling Paper Wallet", Mm(210.0), Mm(297.0), "Layer 1");
 
     let font  = doc.add_builtin_font(BuiltinFont::Courier).unwrap();
     let font_bold = doc.add_builtin_font(BuiltinFont::CourierBold).unwrap();
@@ -143,7 +143,7 @@ fn add_address_to_page(current_layer: &PdfLayerReference, font: &IndirectFontRef
 
     //         page_height  top_margin  vertical_padding  position               
     let ypos = 297.0        - 5.0       - 35.0            - (140.0 * pos as f64);
-    let title = if is_taddr {"T Address"} else {"ZEC Address (Sapling)"};
+    let title = if is_taddr {"Ycash T Address"} else {"Ycash Address (Sapling)"};
 
     add_address_at(current_layer, font, font_bold, title, address, &scaledimg, finalsize, ypos);
 }
@@ -198,7 +198,7 @@ fn add_pk_to_page(current_layer: &PdfLayerReference, font: &IndirectFontRef, fon
     }
 
     // Add the address a second time below the private key
-    let title = if is_taddr {"T Address"} else {"ZEC Address (Sapling)"};
+    let title = if is_taddr {"Ycash T Address"} else {"Ycash Address (Sapling)"};
     current_layer.use_text(title, 12, Mm(10.0), Mm(ypos-10.0), &font_bold);    
     let strs = split_to_max(&address, 39, 39);  // No spaces, so user can copy the address
     for i in 0..strs.len() {
@@ -330,8 +330,8 @@ mod tests {
         assert_eq!(split_to_max("a", 1, 1).join("\n"), "a\n");
 
         // Test the address splitting using max/blocksize we'll know we use
-        let addr = "ztestsapling1w00pdjthkzmzgut4c3y7hu6q6c8ferjczyvc03xwu0rvdgtre8a25em5w3w6jxghvcar5jzehnn";
-        assert_eq!(split_to_max(addr, 44, 8).join("\n"), "ztestsap ling1w00 pdjthkzm zgut4c3y 7hu6q6c8 ferj\nczyvc03x wu0rvdgt re8a25em 5w3w6jxg hvcar5jz ehnn\n");
+        let addr = "ytestsapling1w00pdjthkzmzgut4c3y7hu6q6c8ferjczyvc03xwu0rvdgtre8a25em5w3w6jxghvcar5jzehnn";
+        assert_eq!(split_to_max(addr, 44, 8).join("\n"), "ytestsap ling1w00 pdjthkzm zgut4c3y 7hu6q6c8 ferj\nczyvc03x wu0rvdgt re8a25em 5w3w6jxg hvcar5jz ehnn\n");
         assert_eq!(split_to_max(addr, 44, 8).join(" ").replace(" ", ""), addr);
         assert_eq!(split_to_max(addr, 42, 8).join(" ").replace(" ", ""), addr);
         assert_eq!(split_to_max(addr, 39, 39).join(" ").replace(" ", ""), addr);
