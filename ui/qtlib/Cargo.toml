@@ -1,8 +1,8 @@
 [package]
 name = "qtlib"
 version = "0.1.0"
-authors = ["ZecWallet"]
-edition = "2018"
+authors = ["Ycash Foundation"]
+edition = "2019"
 
 [lib]
 name = "zecpaperrust"
