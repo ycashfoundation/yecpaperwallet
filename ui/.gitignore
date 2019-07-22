@@ -5,10 +5,10 @@ Makefile
 Makefile.Debug
 Makefile.Release
 .qmake.stash
-zecpaperwalletui
-zecpaperwalletui.app/
-zecpaperwalletui_plugin_import.cpp
-zecpaperwalletui.pro.user
+yecpaperwalletui
+yecpaperwalletui.app/
+yecpaperwalletui_plugin_import.cpp
+yecpaperwalletui.pro.user
 .vscode/
 ui*.h
 *.swp
