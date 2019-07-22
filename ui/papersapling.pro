@@ -8,7 +8,7 @@ QT       += core gui
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
-TARGET = zecpaperwalletui
+TARGET = yecpaperwalletui
 TEMPLATE = app
 
 MOC_DIR = bin
