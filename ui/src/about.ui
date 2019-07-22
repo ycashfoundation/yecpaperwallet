@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>About zecpaperwallet</string>
+   <string>About yecpaperwallet</string>
   </property>
   <layout class="QGridLayout" name="gridLayout">
    <item row="2" column="0">
@@ -59,13 +59,13 @@
    <item row="0" column="0">
     <widget class="QGroupBox" name="groupBox">
      <property name="title">
-      <string>zecpaperwallet</string>
+      <string>yecpaperwallet</string>
      </property>
      <layout class="QHBoxLayout" name="horizontalLayout">
       <item>
        <widget class="QLabel" name="lblVersion">
         <property name="text">
-         <string>zecpaperwallet version 1.0(6 May 2009)</string>
+         <string>yecpaperwallet version 1.0(26 July 2019)</string>
         </property>
        </widget>
       </item>

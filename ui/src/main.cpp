@@ -7,8 +7,8 @@ int main(int argc, char *argv[])
     QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 
-    QCoreApplication::setOrganizationDomain("zecwallet.co");
-    QCoreApplication::setOrganizationName("zecpaperwallet");
+    QCoreApplication::setOrganizationDomain("xyz.ycash");
+    QCoreApplication::setOrganizationName("yecpaperwallet");
 
     #ifdef Q_OS_LINUX
         QFontDatabase::addApplicationFont(":/fonts/res/Ubuntu-R.ttf");
@@ -18,7 +18,7 @@ int main(int argc, char *argv[])
     QApplication a(argc, argv);
     MainWindow w;
 
-    w.setWindowTitle(QString("zecpaperwallet ") + APP_VERSION);
+    w.setWindowTitle(QString("yecpaperwallet ") + APP_VERSION);
 
     w.show();
 
