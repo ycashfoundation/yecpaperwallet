@@ -1,7 +1,7 @@
-## ZecPaperWallet Web
-The paper wallet generator [is hosted at paper.zecwallet.co](https://paper.zecwallet.co).
+## YecPaperWallet Web
+The paper wallet generator [is hosted at paper.ycash.xyz](https://paper.ycash.xyz).
 
-This is a web version of the Zec Sapling Paper Wallet generator. It's mainly for illustrative purposes. If you want to generate a serious offline paper wallet, you should run [zecpaperwallet](https://github.com/adityapk00/zecpaperwallet) offline. 
+This is a web version of the Yec Sapling Paper Wallet generator. It's mainly for illustrative purposes. If you want to generate a serious offline paper wallet, you should run [yecpaperwallet](https://github.com/ycashfoundation/zecpaperwallet) offline. 
 
 ## Installing wasm-pack
 You can run the web wallet locally. You need to install the following first:
@@ -16,7 +16,7 @@ cargo install wasm-pack
 You can run the web wallet locally.
 
 ```
-cd zecpaperwallet/web
+cd yecpaperwallet/web
 wasm-pack build
 cd www
 npm install
