@@ -10,9 +10,9 @@ use std::io;
 use std::io::prelude::*;
 
 fn main() { 
-    let matches = App::new("zecpaperwaller")
+    let matches = App::new("yecpaperwaller")
        .version(version::version())
-       .about("A command line Zcash Sapling paper wallet generator")
+       .about("A command line Ycash Sapling paper wallet generator")
        .arg(Arg::with_name("testnet")
                 .long("testnet")
                 .help("Generate Testnet addresses"))
@@ -27,7 +27,7 @@ fn main() {
         .arg(Arg::with_name("nohd")
                 .short("n")
                 .long("nohd")
-                .help("Don't reuse HD keys. Normally, zecpaperwallet will use the same HD key to derive multiple addresses. This flag will use a new seed for each address"))
+                .help("Don't reuse HD keys. Normally, yecpaperwallet will use the same HD key to derive multiple addresses. This flag will use a new seed for each address"))
         .arg(Arg::with_name("output")
                 .short("o")
                 .long("output")
