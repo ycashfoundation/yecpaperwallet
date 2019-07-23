@@ -72,7 +72,7 @@ cp -r yecpaperwalletui.app artifacts/macOS-yecpaperwallet-v$APP_VERSION/
 echo "[OK]"
 
 # Run inside docker container
-docker run --rm -v ${PWD}/..:/opt/yecpaperwallet yecwallet/compileenv:v0.8 bash -c "cd /opt/yecpaperwallet/ui && ./mkdockerwinlinux.sh -v $APP_VERSION"
+docker run --rm -v ${PWD}/..:/opt/yecpaperwallet zecwallet/compileenv:v0.8 bash -c "cd /opt/yecpaperwallet/ui && ./mkdockerwinlinux.sh -v $APP_VERSION"
 
 # Move to build the cli
 cd ../cli
@@ -85,7 +85,7 @@ echo "pub fn version() -> &'static str { &\"$APP_VERSION\" }" > src/version.rs
 cargo build --release 
 
 # For Windows and Linux, build via docker
-docker run --rm -v $(pwd)/..:/opt/yecpaperwallet rust/yecpaperwallet:v0.3 bash -c "cd /opt/yecpaperwallet/cli && cargo build --release  && cargo build --release --target x86_64-pc-windows-gnu && cargo build --release --target aarch64-unknown-linux-gnu && cargo build --release --target armv7-unknown-linux-gnueabihf"
+docker run --rm -v $(pwd)/..:/opt/yecpaperwallet rust/zecpaperwallet:v0.3 bash -c "cd /opt/yecpaperwallet/cli && cargo build --release  && cargo build --release --target x86_64-pc-windows-gnu && cargo build --release --target aarch64-unknown-linux-gnu && cargo build --release --target armv7-unknown-linux-gnueabihf"
 
 # Come back and package everything
 cd ../ui
