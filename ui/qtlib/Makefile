@@ -8,7 +8,7 @@ all: release
 
 winrelease: target/x86_64-pc-windows-gnu/release/yecpaperrust.lib
 
-target/x86_64-pc-windows-gnu/release/zecpaperrust.lib: src/lib.rs Cargo.toml
+target/x86_64-pc-windows-gnu/release/yecpaperrust.lib: src/lib.rs Cargo.toml
 	cargo build --lib --release --target x86_64-pc-windows-gnu
 
 release: target/release/yecpaperrust.$(EXT)
