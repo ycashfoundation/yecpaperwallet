@@ -66,8 +66,8 @@ DEPENDPATH  += $$PWD/qtlib/src
 win32: RC_ICONS = res/icon.ico
 ICON = res/logo.icns
 
-unix:        librust.target   = $$PWD/qtlib/target/release/libzecpaperrust.a
-else:win32:  librust.target   = $$PWD/qtlib/target/x86_64-pc-windows-gnu/release/zecpaperrust.lib
+unix:        librust.target   = $$PWD/qtlib/target/release/libyecpaperrust.a
+else:win32:  librust.target   = $$PWD/qtlib/target/x86_64-pc-windows-gnu/release/yecpaperrust.lib
 
 unix:        librust.commands = $(MAKE) -C $$PWD/qtlib 
 else:win32:  librust.commands = $(MAKE) -C $$PWD/qtlib winrelease
@@ -78,7 +78,7 @@ distclean.depends += librustclean
 QMAKE_INFO_PLIST = res/Info.plist
 
 QMAKE_EXTRA_TARGETS += librust librustclean distclean
-QMAKE_CLEAN += $$PWD/qtlib/target/release/libzecpaperrust.a
+QMAKE_CLEAN += $$PWD/qtlib/target/release/libyecpaperrust.a
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin
@@ -86,9 +86,9 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
 
 
-win32: LIBS += -L$$PWD/qtlib/target/x86_64-pc-windows-gnu/release -lzecpaperrust
-else:macx: LIBS += -L$$PWD/qtlib/target/release -lzecpaperrust -framework Security -framework Foundation
-else:unix: LIBS += -L$$PWD/qtlib/target/release -lzecpaperrust -ldl
+win32: LIBS += -L$$PWD/qtlib/target/x86_64-pc-windows-gnu/release -lyecpaperrust
+else:macx: LIBS += -L$$PWD/qtlib/target/release -lyecpaperrust -framework Security -framework Foundation
+else:unix: LIBS += -L$$PWD/qtlib/target/release -lyecpaperrust -ldl
 
-win32: PRE_TARGETDEPS += $$PWD/qtlib/target/x86_64-pc-windows-gnu/release/zecpaperrust.lib
-else:unix::PRE_TARGETDEPS += $$PWD/qtlib/target/release/libzecpaperrust.a
+win32: PRE_TARGETDEPS += $$PWD/qtlib/target/x86_64-pc-windows-gnu/release/yecpaperrust.lib
+else:unix::PRE_TARGETDEPS += $$PWD/qtlib/target/release/libyecpaperrust.a

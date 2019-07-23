@@ -1,6 +1,6 @@
 mod utils;
 
-use zecpaperlib::paper::{generate_wallet, double_sha256};
+use yecpaperlib::paper::{generate_wallet, double_sha256};
 use wasm_bindgen::prelude::*;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global

@@ -1,6 +1,6 @@
 use libc::{c_char};
 use std::ffi::{CStr, CString};
-use zecpaperlib::{pdf, paper};
+use yecpaperlib::{pdf, paper};
 
 /**
  * Call into rust to generate a paper wallet. Returns the paper wallet in JSON form. 

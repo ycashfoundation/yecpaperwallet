@@ -1,11 +1,11 @@
 extern crate clap;
-extern crate zecpaperlib;
+extern crate yecpaperlib;
 
 mod version;
 
 use clap::{Arg, App};
-use zecpaperlib::paper::*;
-use zecpaperlib::pdf;
+use yecpaperlib::paper::*;
+use yecpaperlib::pdf;
 use std::io;
 use std::io::prelude::*;
 
