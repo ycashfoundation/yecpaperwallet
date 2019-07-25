@@ -81,8 +81,9 @@ cd ../cli
 cargo clean
 echo "pub fn version() -> &'static str { &\"$APP_VERSION\" }" > src/version.rs
 
-# Compile for mac directly
+# Compile for mac directly, and copy it over first, otherwise it will get overwritten by the docker builds.
 cargo build --release 
+cp target/release/yecpaperwallet ../ui/artifacts/macOS-yecpaperwallet-v$APP_VERSION/
 
 # For Windows and Linux, build via docker
 docker run --rm -v $(pwd)/..:/opt/yecpaperwallet rust/zecpaperwallet:v0.3 bash -c "cd /opt/yecpaperwallet/cli && cargo build --release  && cargo build --release --target x86_64-pc-windows-gnu && cargo build --release --target aarch64-unknown-linux-gnu && cargo build --release --target armv7-unknown-linux-gnueabihf"
@@ -92,7 +93,7 @@ cd ../ui
 
 # Now sign and zip the binaries
 #macOS
-cp ../cli/target/release/yecpaperwallet artifacts/macOS-yecpaperwallet-v$APP_VERSION/
+# Was previously copied over
 gpg --batch --output artifacts/macOS-yecpaperwallet-v$APP_VERSION/yecpaperwallet.sig --detach-sig artifacts/macOS-yecpaperwallet-v$APP_VERSION/yecpaperwallet 
 #gpg --batch --output artifacts/macOS-yecpaperwallet-v$APP_VERSION/yecpaperwallet.app.sig --detach-sig artifacts/macOS-yecpaperwallet-v$APP_VERSION/yecpaperwallet.app 
 cd artifacts
