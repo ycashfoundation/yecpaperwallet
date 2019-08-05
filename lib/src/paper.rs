@@ -762,7 +762,7 @@ mod tests {
                 "t3" => [0x1C, 0x2C],
                 "tm" => params(true).taddress_version,
                 "t2" => [0x1C, 0x2A],
-                _    => [0x00, 0x00]
+                _    => panic!("Unexpected address prefix")
             };
 
             let addr_bytes = addr.from_base58check(2).unwrap();
