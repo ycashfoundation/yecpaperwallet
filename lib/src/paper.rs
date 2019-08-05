@@ -1,6 +1,6 @@
 use std::thread;
 use hex;
-use base58::{ToBase58};
+use base58::{ToBase58, FromBase58};
 use bech32::{Bech32, u5, ToBase32};
 use rand::{Rng, ChaChaRng, FromEntropy, SeedableRng};
 use json::{array, object};
@@ -33,6 +33,34 @@ impl ToBase58Check for [u8] {
         let mut checksum = double_sha256(&payload);
         payload.append(&mut checksum[..4].to_vec());
         payload.to_base58()
+    }
+}
+
+pub trait FromBase58Check {
+    fn from_base58check(&self, version_len: usize) -> Result<Vec<u8>, &str>;
+}
+
+
+impl FromBase58Check for str {
+    fn from_base58check(&self, version_len: usize) -> Result<Vec<u8>, &str> {
+        let mut payload: Vec<u8> = match self.from_base58() {
+            Ok(payload)     => payload,
+            Err(_)          => return Err("Invalid Base58"),
+        };
+
+        if payload.len() < 5 {
+            return Err("InvalidChecksum")
+        }
+
+        let checksum_index = payload.len() - 4;
+        let provided_checksum = payload.split_off(checksum_index);
+        let checksum = double_sha256(&payload)[..4].to_vec();
+        if checksum != provided_checksum {
+            return Err("InvalidChecksum")
+        }
+
+
+        Ok(payload[version_len..].to_vec())
     }
 }
 
@@ -396,8 +424,7 @@ fn gen_addresses_with_seed_as_json<F>(is_testnet: bool, zcount: u32, tcount: u32
 
 /// Generate a t address
 fn get_taddress(is_testnet: bool, rng: &mut ChaChaRng) -> (String, String) {
-    use secp256k1;
-    use ripemd160::{Ripemd160, Digest};
+    use ripemd160::{Ripemd160};
 
     let mut sk_bytes: [u8; 32] = [0;32];
 
@@ -690,6 +717,56 @@ mod tests {
             let (a, sk) = get_taddress(false, &mut rng);
             assert_eq!(a, testdata[i][0]);
             assert_eq!(sk, testdata[i][1]);
+        }
+    }
+
+    /**
+     * A simple utility to translate zcash t addresses into ycash t addresses
+     * to fix test cases and such. Add "[test]" below to be able to run it easily.
+     */
+    fn gen_replacement_addresses() {
+        use crate::paper::{FromBase58Check, ToBase58Check, params};
+
+        let testdata = [
+            "t1T8yaLVhNqxA5KJcmiqqFN88e8DNp2PBfF",
+            "t3VDyGHn9mbyCf448m2cHTu5uXvsJpKHbiZ",
+            "tmHMBeeYRuc2eVicLNfP15YLxbQsooCA6jb",
+            "t2Fbo6DBKKVYw1SfrY8bEgz56hYEhywhEN6",
+            "t1TpfguJj5zxKUfWcsNTrh6eod2XXsTKtvB",
+            "t3hc9Y2stuEWjS2dRDtGdiu3enMpxAbeUiK",
+            "tmXm2g5ouU8Pzksmqx3KYmeoeaWrAvj3rB5",
+            "t2QYxHjM8btztWTsMnFnZNurm7RXENk9ZhR",
+            "t1UxCT4RrCbGH36etfQaPF1svNtZVhsqs5A",
+            "t3Teyxv1gF8FZ9MW8WN4MvTxQ4JScABsKfL",
+            "tmXYBLe2Q9MbXfgGb2QqdN7RWdi7tQ2z8ya",
+            "t2QQcXALz4745JEgzuAEsJNgt6nBQpsqegu",
+            "t1ZiM4oLF7hvboF4LPqhbBg7RLgJCCJC6Tj",
+            "t3LoV8q8R44fSbe84DBKDk3sAEoYum4hQYj",
+            "tmBmkeJmwF3UgVXqJLzEin49ftK1HmsqYup",
+            "t2Byypnbxh2Pfk7VqLMzYfiNeD72o6yvtqX",
+            "t1boxWWuUs3dVUFeUMiPqCdwD4QtL1AMx9G",
+            "t3h5bvzkCXkiMttmQScK56UjVcqeD3NnReW",
+            "tmDBvm2S5yAj5pVAvB4th1DDVpLq3KuN8S1",
+            "t2TooyZ7BmQTBkgCVhdNQsPfeVdQoWqsHQa",
+            "t1SWDbHDTatR1ag8yTFLdVWd1erfu7Pbbjk",
+            "t3QKR6mLBwPY6DeqHwjJCxUwSsGUToB5sWJ",
+            "tmU1EeoNHCfmWpeZWeRnKmNeVdHJgZjse5G",
+            "t2LZVwB5A2n5U9odwMbLd1g5Bz9Z3ZFoCJH",
+            "t1Lgcj4m5r7eDWctWQM7ete85hHivQxMjBZ",
+            "t3TCuHUxH3LGnsFYTUbSwHrRXxTaEA8hAaf",
+        ];
+
+        for addr in &testdata {
+            let version = match &addr[..2] {
+                "t1" => params(false).taddress_version,
+                "t3" => [0x1C, 0x2C],
+                "tm" => params(true).taddress_version,
+                "t2" => [0x1C, 0x2A],
+                _    => [0x00, 0x00]
+            };
+
+            let addr_bytes = addr.from_base58check(2).unwrap();
+            println!("sed -i 's/{}/{}/g'", addr, addr_bytes.to_base58check(&version, &[]));
         }
     }
     
