@@ -724,49 +724,37 @@ mod tests {
      * A simple utility to translate zcash t addresses into ycash t addresses
      * to fix test cases and such. Add "[test]" below to be able to run it easily.
      */
+    #[test]
     fn gen_replacement_addresses() {
         use crate::paper::{FromBase58Check, ToBase58Check, params};
+        use bech32::Bech32;
+        use std::str::FromStr;
 
         let testdata = [
-            "t1T8yaLVhNqxA5KJcmiqqFN88e8DNp2PBfF",
-            "t3VDyGHn9mbyCf448m2cHTu5uXvsJpKHbiZ",
-            "tmHMBeeYRuc2eVicLNfP15YLxbQsooCA6jb",
-            "t2Fbo6DBKKVYw1SfrY8bEgz56hYEhywhEN6",
-            "t1TpfguJj5zxKUfWcsNTrh6eod2XXsTKtvB",
-            "t3hc9Y2stuEWjS2dRDtGdiu3enMpxAbeUiK",
-            "tmXm2g5ouU8Pzksmqx3KYmeoeaWrAvj3rB5",
-            "t2QYxHjM8btztWTsMnFnZNurm7RXENk9ZhR",
-            "t1UxCT4RrCbGH36etfQaPF1svNtZVhsqs5A",
-            "t3Teyxv1gF8FZ9MW8WN4MvTxQ4JScABsKfL",
-            "tmXYBLe2Q9MbXfgGb2QqdN7RWdi7tQ2z8ya",
-            "t2QQcXALz4745JEgzuAEsJNgt6nBQpsqegu",
-            "t1ZiM4oLF7hvboF4LPqhbBg7RLgJCCJC6Tj",
-            "t3LoV8q8R44fSbe84DBKDk3sAEoYum4hQYj",
-            "tmBmkeJmwF3UgVXqJLzEin49ftK1HmsqYup",
-            "t2Byypnbxh2Pfk7VqLMzYfiNeD72o6yvtqX",
-            "t1boxWWuUs3dVUFeUMiPqCdwD4QtL1AMx9G",
-            "t3h5bvzkCXkiMttmQScK56UjVcqeD3NnReW",
-            "tmDBvm2S5yAj5pVAvB4th1DDVpLq3KuN8S1",
-            "t2TooyZ7BmQTBkgCVhdNQsPfeVdQoWqsHQa",
-            "t1SWDbHDTatR1ag8yTFLdVWd1erfu7Pbbjk",
-            "t3QKR6mLBwPY6DeqHwjJCxUwSsGUToB5sWJ",
-            "tmU1EeoNHCfmWpeZWeRnKmNeVdHJgZjse5G",
-            "t2LZVwB5A2n5U9odwMbLd1g5Bz9Z3ZFoCJH",
-            "t1Lgcj4m5r7eDWctWQM7ete85hHivQxMjBZ",
-            "t3TCuHUxH3LGnsFYTUbSwHrRXxTaEA8hAaf",
+            "tmC6YZnCUhm19dEXxh3Jb7srdBJxDawaCab",
         ];
 
         for addr in &testdata {
-            let version = match &addr[..2] {
-                "t1" => params(false).taddress_version,
-                "t3" => [0x1C, 0x2C],
-                "tm" => params(true).taddress_version,
-                "t2" => [0x1C, 0x2A],
-                _    => panic!("Unexpected address prefix")
-            };
+            if addr.starts_with("zs") || addr.starts_with("ztestsapling") {
+                let b32 = Bech32::from_str(addr).unwrap();
+                let recoded = Bech32::new(if addr.starts_with("zs") { "ys".to_string() } else { "ytestsapling".to_string() }, 
+                                            b32.data().to_vec()).expect("bech32 failed").to_string();
 
-            let addr_bytes = addr.from_base58check(2).unwrap();
-            println!("sed -i 's/{}/{}/g'", addr, addr_bytes.to_base58check(&version, &[]));
+                println!("sed -i 's/{}/{}/g'", addr, recoded);
+            } else {
+                let version = match &addr[..2] {
+                    "t1" => params(false).taddress_version,
+                    "t3" => [0x1C, 0x2C],
+                    "tm" => params(true).taddress_version,
+                    "t2" => [0x1C, 0x2A],
+                    "zt" => [0x16, 0x52],
+                    "zc" => [0x16, 0x36],
+                    _    => panic!("Unexpected address prefix")
+                };
+
+                let addr_bytes = addr.from_base58check(2).unwrap();
+                println!("sed -i 's/{}/{}/g'", addr, addr_bytes.to_base58check(&version, &[]));
+            }
         }
     }
     
