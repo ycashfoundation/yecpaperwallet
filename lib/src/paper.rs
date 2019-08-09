@@ -358,22 +358,14 @@ pub fn mix_user_system_entropy(user_entropy: &[u8]) -> [u8; 32] {
 
 }
 
-pub fn generate_diversified_addresses(is_testnet: bool, zcount: u32, user_entropy: &[u8]) -> String {
-    // Get 32 bytes of mixed entropy for the RNG
-    let mut rng = ChaChaRng::from_seed(mix_user_system_entropy(user_entropy));
-
-    let mut seed:[u8; 32] = [0; 32]; 
-    rng.fill(&mut seed);
-
-    let mut di = DiversifierIndex::new();
-    let master_spk = ExtendedSpendingKey::from_path(&ExtendedSpendingKey::master(&seed),
-                            &[ChildIndex::Hardened(32), ChildIndex::Hardened(params(is_testnet).cointype), ChildIndex::Hardened(0)]);
-    
+pub fn generate_diversified_addresses_from_spk(is_testnet: bool, spk: &ExtendedSpendingKey, zcount: u32) -> json::JsonValue {
     // Output object
     let mut addresses = array![];
 
+    let mut di = DiversifierIndex::new();
+
     for _i in 0..zcount {
-        let (o_di, addr) = ExtendedFullViewingKey::from(&master_spk).address(di).unwrap();
+        let (o_di, addr) = ExtendedFullViewingKey::from(spk).address(di).unwrap();
         // Address is encoded as a bech32 string
         let mut v = vec![0; 43];
 
@@ -388,6 +380,19 @@ pub fn generate_diversified_addresses(is_testnet: bool, zcount: u32, user_entrop
         addresses.push(encoded).unwrap();
     }
 
+    return addresses;
+}
+
+pub fn generate_diversified_addresses(is_testnet: bool, zcount: u32, user_entropy: &[u8]) -> String {
+    // Get 32 bytes of mixed entropy for the RNG
+    let mut rng = ChaChaRng::from_seed(mix_user_system_entropy(user_entropy));
+
+    let mut seed:[u8; 32] = [0; 32]; 
+    rng.fill(&mut seed);
+
+    let master_spk = ExtendedSpendingKey::from_path(&ExtendedSpendingKey::master(&seed),
+                            &[ChildIndex::Hardened(32), ChildIndex::Hardened(params(is_testnet).cointype), ChildIndex::Hardened(0)]);
+    
     let ans = object!{
         "type"          => "zaddr",
         "private_key"   => encode_privatekey(&master_spk, is_testnet),
@@ -395,7 +400,7 @@ pub fn generate_diversified_addresses(is_testnet: bool, zcount: u32, user_entrop
             "HDSeed"    => hex::encode(seed),
             "path"      => format!("m/32'/{}'/{}'", params(is_testnet).cointype, 0)
         },
-        "addresses"     => addresses
+        "addresses"     => generate_diversified_addresses_from_spk(is_testnet, &master_spk, zcount)
     };
 
     return json::stringify_pretty(ans, 2);
@@ -615,7 +620,7 @@ mod tests {
             let e = hex::decode(i["encoded"].as_str().unwrap()).unwrap();
             let spk = ExtendedSpendingKey::read(&e[..]).unwrap();
 
-            assert_eq!(encode_address(&spk, true), i["address"]);
+            assert_eq!(encode_default_address(&spk, true), i["address"]);
             assert_eq!(encode_privatekey(&spk, true), i["pk"]);
         }
     }
@@ -768,6 +773,53 @@ mod tests {
             assert_eq!(a, testdata[i][0]);
             assert_eq!(sk, testdata[i][1]);
         }
+    }
+
+    #[test]
+    fn test_diversified_addresses() {
+        use crate::paper::*;
+        use std::str::FromStr;
+        use bech32::{Bech32, FromBase32};
+
+        let pk = "secret-extended-key-main1qd3dtt7fqqqqpqr07ydnreul39a7zcug8slnjep5dpvv0wx23clyuvw0d5m99ywswmxm2spu0wk3ejz4qpspde3k8sh5r6tgyeu86q09m820sn77atlszyjytxwxthkpufh7dmsl3cpep0hk8gw47xkz4dharfrx9d0xx4cytmwcqpdezumh3vpkt3ysf3u77zh63qpp8cwwr027tsytgq657fthdq96vwyf9rjahxf52pq7x8nljgzn683hrjj2srxpflpdx2e6sagzm5uv5";
+        let addrs = ["ys15exsk9vlvty6esfu83m8y763emj7cnegq5jq25kztl0rh0fly8fez6x736p9xpa8w6lmxpwwe8l",
+                     "ys1f2lerynegsx7upgaa8zk9ndd3enc06cjm5pc4tlhx6gjs6tsdmg22uuk3wnep269uwyykvxl76d",
+                     "ys1ajxsqwszd92kj9pxczf5wseytpqesvt220uslc6u35lhqh6xlx3aseevk0k67n4xt84cygafe3s", 
+                     "ys100h9wekwvt6cxkcyfv6yf30srpuvzuft6nnex23whs768gkvvk0c6v37hzevqx87lfwkzlpkmeg",
+                     "ys1c9l9kx5ggp2xwjn3fhhlaqgmc5ffkrcuw5dcu34fx7csc4yz878k7e9ahgmntxywwdt36c3hw3u",
+                     "ys1a3xdskmv692hngtl8c7pm8c7yaapjgyqqkdw208vkqzkexhm0rhzjw7dcm6ve4g9lv83ucez3zy"];
+
+        let pk_data = Vec::from_base32(&Bech32::from_str(pk).unwrap().data()[..]).unwrap();
+        let spk = ExtendedSpendingKey::read(&pk_data[..]).unwrap();
+
+        assert_eq!(addrs[0], encode_default_address(&spk, false));
+
+        let div_addrs = generate_diversified_addresses_from_spk(false, &spk, addrs.len() as u32);
+
+        for i in 0..addrs.len() {
+            assert_eq!(addrs[i], div_addrs[i].as_str().unwrap());
+        }
+
+        // 0-seeded, for predictable outcomes
+        let seed : [u8; 32] = [0; 32];
+
+        let known_good = object!{
+            "type"=> "zaddr",
+            "private_key"=> "secret-extended-key-main1q0jcscyrqqqqpqxh2lpsn8c5x4pkzkmdmrszkg3zwpgeuvg2gxcnum8ce7cgkmm6gm45kvme3k2d0hdg0p4p68ljs440kwx0cdqqtnxvna6zwanthljqxxskmn0pnrz5vpddy0kyafdyhawmk0fq57867kqj24kgk7dq8vs93jewhm9jnhn0khja4elly3t8evv3smkufklrfc775h6d5e8ckpk0sz2znfps0zcc8078p30lp4c5ycs0rnuqz7z4wentzr3f2xjnndcenrjjp",
+            "seed"=> object!{
+                "HDSeed"=> "f0ab58fc49df9b6b9c3a881ab4db400ef1263f25329f0f92a9a9468b4acde0cd",
+                "path"=> "m/32'/347'/0'"
+            },
+            "addresses"=> array!{
+                "ys1g5y8s4p2h4h0wd3mr56z4e4q72ka7kw4x6gy9tgutdn3xwflp29vd4adrvyryv6sxt6scjw5yvt",
+                "ys1xxpyxsxp2m2cv96y2lmcqdt50v9jhvazvfm2y2e5gwc8nux9grfy7lqscp37ww54anjf7z20yke",
+                "ys1d5kcl4rxcf70dxnt73cjxy8zwn25cef5mae40vgrdk4djw3yae4nchkxt2ms3aps8a67sfx7t9s",
+                "ys1wvrvyp6gr0ryzpejysr24m22k4xvqf8c72y8uj4pquk5u5vj4e23x9t67nkv24wc3z23gq90kzz",
+                "ys1dv79f3c466n6qncxzwzmf7wd965un65ghycax67z8uffftg9ulpnd08ulhyr5u73z0tasa5qspq"
+            }
+        };
+
+        assert_eq!(json::stringify_pretty(known_good, 2), generate_diversified_addresses(false, 5, &seed));
     }
 
     /**
