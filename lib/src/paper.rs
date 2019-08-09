@@ -14,6 +14,7 @@ use std::panic;
 use std::time::{SystemTime};
 use zcash_primitives::zip32::{DiversifierIndex, DiversifierKey, ChildIndex, ExtendedSpendingKey, ExtendedFullViewingKey};
 
+
 /// A trait for converting a [u8] to base58 encoded string.
 pub trait ToBase58Check {
     /// Converts a value of `self` to a base58 value, returning the owned string.
@@ -142,7 +143,7 @@ fn get_bech32_for_prefix(prefix: String) -> Result<Vec<u5>, String> {
     return Ok(ans);
 }
 
-fn encode_address(spk: &ExtendedSpendingKey, is_testnet: bool) -> String {
+fn encode_default_address(spk: &ExtendedSpendingKey, is_testnet: bool) -> String {
     let (_d, addr) = spk.default_address().expect("Cannot get result");
 
     // Address is encoded as a bech32 string
@@ -205,7 +206,7 @@ pub fn vanity_thread(is_testnet: bool, entropy: &[u8], prefix: String, tx: mpsc:
             let spk = ExtendedSpendingKey::read(&spkv[..]).unwrap();
 
             
-            let encoded = encode_address(&spk, is_testnet);
+            let encoded = encode_default_address(&spk, is_testnet);
             let encoded_pk = encode_privatekey(&spk, is_testnet);
             
             let wallet = array!{object!{
@@ -327,8 +328,8 @@ pub fn generate_vanity_wallet(is_testnet: bool, num_threads: u32, prefix: String
     return Ok(wallet);
 }
 
-/// Generate a series of `count` addresses and private keys. 
-pub fn generate_wallet(is_testnet: bool, nohd: bool, zcount: u32, tcount: u32, user_entropy: &[u8]) -> String {        
+/// Mix user and system entropy together
+pub fn mix_user_system_entropy(user_entropy: &[u8]) -> [u8; 32] {
     // Get 32 bytes of system entropy
     let mut system_entropy:[u8; 32] = [0; 32]; 
     {
@@ -353,8 +354,57 @@ pub fn generate_wallet(is_testnet: bool, nohd: bool, zcount: u32, tcount: u32, u
     let mut final_entropy: [u8; 32] = [0; 32];
     final_entropy.clone_from_slice(&double_sha256(&state.result()[..]));
 
-    // ...which will we use to seed the RNG
-    let mut rng = ChaChaRng::from_seed(final_entropy);
+    return final_entropy;
+
+}
+
+pub fn generate_diversified_addresses(is_testnet: bool, zcount: u32, user_entropy: &[u8]) -> String {
+    // Get 32 bytes of mixed entropy for the RNG
+    let mut rng = ChaChaRng::from_seed(mix_user_system_entropy(user_entropy));
+
+    let mut seed:[u8; 32] = [0; 32]; 
+    rng.fill(&mut seed);
+
+    let mut di = DiversifierIndex::new();
+    let master_spk = ExtendedSpendingKey::from_path(&ExtendedSpendingKey::master(&seed),
+                            &[ChildIndex::Hardened(32), ChildIndex::Hardened(params(is_testnet).cointype), ChildIndex::Hardened(0)]);
+    
+    // Output object
+    let mut addresses = array![];
+
+    for _i in 0..zcount {
+        let (o_di, addr) = ExtendedFullViewingKey::from(&master_spk).address(di).unwrap();
+        // Address is encoded as a bech32 string
+        let mut v = vec![0; 43];
+
+        v.get_mut(..11).unwrap().copy_from_slice(&addr.diversifier.0);
+        addr.pk_d.write(v.get_mut(11..).unwrap()).expect("Cannot write!");
+        let checked_data: Vec<u5> = v.to_base32();
+        let encoded : String = Bech32::new(params(is_testnet).zaddress_prefix.into(), checked_data).expect("bech32 failed").to_string();
+        
+        di = o_di;
+        di.increment().unwrap();
+
+        addresses.push(encoded).unwrap();
+    }
+
+    let ans = object!{
+        "type"          => "zaddr",
+        "private_key"   => encode_privatekey(&master_spk, is_testnet),
+        "seed"          => object!{
+            "HDSeed"    => hex::encode(seed),
+            "path"      => format!("m/32'/{}'/{}'", params(is_testnet).cointype, 0)
+        },
+        "addresses"     => addresses
+    };
+
+    return json::stringify_pretty(ans, 2);
+}
+
+/// Generate a series of `count` addresses and private keys. 
+pub fn generate_wallet(is_testnet: bool, nohd: bool, zcount: u32, tcount: u32, user_entropy: &[u8]) -> String {        
+    // Get 32 bytes of mixed entropy for the RNG
+    let mut rng = ChaChaRng::from_seed(mix_user_system_entropy(user_entropy));
 
     if !nohd {
         // Allow HD addresses, so use only 1 seed        
@@ -467,7 +517,7 @@ fn get_zaddress(is_testnet: bool, seed: &[u8], index: u32) -> (String, String, S
         "path"      => format!("m/32'/{}'/{}'", params(is_testnet).cointype, index)
     };
 
-    let encoded = encode_address(&spk, is_testnet);
+    let encoded = encode_default_address(&spk, is_testnet);
     let encoded_pk = encode_privatekey(&spk, is_testnet);
 
     // Viewing Key is encoded as bech32 string
@@ -536,7 +586,7 @@ mod tests {
 
     #[test]
     fn test_z_encoding() {
-        use crate::paper::{encode_address, encode_privatekey};
+        use crate::paper::{encode_default_address, encode_privatekey};
         use zcash_primitives::zip32::ExtendedSpendingKey;
 
         let main_data = "[
@@ -549,7 +599,7 @@ mod tests {
             let e = hex::decode(i["encoded"].as_str().unwrap()).unwrap();
             let spk = ExtendedSpendingKey::read(&e[..]).unwrap();
 
-            assert_eq!(encode_address(&spk, false), i["address"]);
+            assert_eq!(encode_default_address(&spk, false), i["address"]);
             assert_eq!(encode_privatekey(&spk, false), i["pk"]);
         }
 
