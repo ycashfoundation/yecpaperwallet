@@ -1,7 +1,9 @@
+extern crate sapling_crypto;
+
 use std::thread;
 use hex;
 use base58::{ToBase58, FromBase58};
-use bech32::{Bech32, u5, ToBase32};
+use bech32::{Bech32, u5, ToBase32, FromBase32};
 use rand::{Rng, ChaChaRng, FromEntropy, SeedableRng};
 use json::{array, object};
 use sha2::{Sha256, Digest};
@@ -13,7 +15,7 @@ use std::sync::Arc;
 use std::panic;
 use std::time::{SystemTime};
 use zcash_primitives::zip32::{DiversifierIndex, DiversifierKey, ChildIndex, ExtendedSpendingKey, ExtendedFullViewingKey};
-
+use sapling_crypto::primitives::Diversifier;
 
 /// A trait for converting a [u8] to base58 encoded string.
 pub trait ToBase58Check {
@@ -173,14 +175,10 @@ pub fn vanity_thread(is_testnet: bool, entropy: &[u8], prefix: String, tx: mpsc:
     let mut seed: [u8; 32] = [0; 32];
     seed.copy_from_slice(&entropy[0..32]);
 
-    let di = DiversifierIndex::new();
-    let vanity_bytes = get_bech32_for_prefix(prefix).expect("Bad char in prefix");
-
-    let master_spk = ExtendedSpendingKey::from_path(&ExtendedSpendingKey::master(&seed),
-                            &[ChildIndex::Hardened(32), ChildIndex::Hardened(params(is_testnet).cointype), ChildIndex::Hardened(0)]);
-
-    let mut spkv = vec![];
-    master_spk.write(&mut spkv).unwrap();
+    let mut vanity_bytes = get_bech32_for_prefix(prefix).expect("Bad char in prefix");
+    vanity_bytes.push(u5::try_from_u8(0).unwrap());
+    //vanity_u5[0..vanity_bytes.len()].copy_from_slice(&vanity_bytes[..]);
+    let vanity_u8 = Vec::<u8>::from_base32(&vanity_bytes).unwrap();
 
     let mut i: u32 = 0;
     loop {
@@ -188,26 +186,36 @@ pub fn vanity_thread(is_testnet: bool, entropy: &[u8], prefix: String, tx: mpsc:
             return;
         }
 
-        let dk = DiversifierKey::master(&seed);
-        let (_ndk, nd) = dk.diversifier(di).unwrap();
+        let mut dvn_u8 : [u8; 11] = [0; 11];
+        dvn_u8.copy_from_slice(&seed[0..11]);
+        dvn_u8.reverse();
+        dvn_u8[0..vanity_u8.len()].copy_from_slice(&vanity_u8[..]);
+        println!("{:?}", dvn_u8);
 
-        // test for nd
-        let mut isequal = true;
-        for i in 0..vanity_bytes.len() {
-            if vanity_bytes[i] != nd.0.to_base32()[i] {
-                isequal = false;
-                break;
-            }
-        }
+        let master_spk = ExtendedSpendingKey::from_path(&ExtendedSpendingKey::master(&seed),
+                            &[ChildIndex::Hardened(32), ChildIndex::Hardened(params(is_testnet).cointype), ChildIndex::Hardened(0)]);
 
-        if isequal { 
-            let len = spkv.len();
-            spkv[(len-32)..len].copy_from_slice(&dk.0[0..32]);
-            let spk = ExtendedSpendingKey::read(&spkv[..]).unwrap();
+        let mut spkv = vec![];
+        master_spk.write(&mut spkv).unwrap();
 
-            
-            let encoded = encode_default_address(&spk, is_testnet);
-            let encoded_pk = encode_privatekey(&spk, is_testnet);
+        let mut nd = Diversifier(dvn_u8);
+
+        let addr_result = ExtendedFullViewingKey::from(&master_spk).address_from_diversifier(nd);
+        if addr_result.is_err() {
+            println!("continuing");
+            continue;
+        } else {
+            let addr = addr_result.unwrap();
+
+            // Address is encoded as a bech32 string
+            let mut v = vec![0; 43];
+
+            v.get_mut(..11).unwrap().copy_from_slice(&addr.diversifier.0);
+            addr.pk_d.write(v.get_mut(11..).unwrap()).expect("Cannot write!");
+            let checked_data: Vec<u5> = v.to_base32();
+        
+            let encoded : String = Bech32::new(params(is_testnet).zaddress_prefix.into(), checked_data).expect("bech32 failed").to_string();
+            let encoded_pk = encode_privatekey(&master_spk, is_testnet);
             
             let wallet = array!{object!{
                 "num"           => 0,
