@@ -1,4 +1,5 @@
 extern crate sapling_crypto;
+extern crate pairing;
 
 use std::thread;
 use hex;
@@ -14,7 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::panic;
 use std::time::{SystemTime};
-use zcash_primitives::zip32::{DiversifierIndex, DiversifierKey, ChildIndex, ExtendedSpendingKey, ExtendedFullViewingKey};
+use zcash_primitives::zip32::{DiversifierIndex, ChildIndex, ExtendedSpendingKey, ExtendedFullViewingKey};
 use sapling_crypto::primitives::Diversifier;
 
 /// A trait for converting a [u8] to base58 encoded string.
@@ -169,41 +170,70 @@ fn encode_privatekey(spk: &ExtendedSpendingKey, is_testnet: bool) -> String {
     return encoded_pk;
 }
 
+use sapling_crypto::primitives::PaymentAddress;
+use zcash_primitives::JUBJUB;
+use pairing::bls12_381::Bls12;
+
+pub fn address_from_diversifier(fvk: &ExtendedFullViewingKey, nd: &Diversifier) -> Result<PaymentAddress<Bls12>, ()> {
+    match fvk.fvk.vk.into_payment_address(*nd, &JUBJUB) {
+        Some(addr) => Ok(addr),
+        None       => Err(())
+    }
+}
+
 /// A single thread that grinds through the Diversifiers to find the defualt key that matches the prefix
 pub fn vanity_thread(is_testnet: bool, entropy: &[u8], prefix: String, tx: mpsc::Sender<String>, please_stop: Arc<AtomicBool>) {
-    
+    // Create a local copy of the seed, so we can increment it between tries
     let mut seed: [u8; 32] = [0; 32];
     seed.copy_from_slice(&entropy[0..32]);
 
+    // Convert to u5, so we can directly lookup the prefix
     let mut vanity_bytes = get_bech32_for_prefix(prefix).expect("Bad char in prefix");
     vanity_bytes.push(u5::try_from_u8(0).unwrap());
-    //vanity_u5[0..vanity_bytes.len()].copy_from_slice(&vanity_bytes[..]);
-    let vanity_u8 = Vec::<u8>::from_base32(&vanity_bytes).unwrap();
 
-    let mut i: u32 = 0;
+    // The padding has to align properly. If the padding is off, we'll add "0" bytes at the end
+    let vanity_u8 = loop {
+        let r = Vec::<u8>::from_base32(&vanity_bytes);
+        if r.is_err() {
+            vanity_bytes.push(u5::try_from_u8(0).unwrap());
+            continue
+        }
+        break r.unwrap();
+    };
+
+    // Make sure the prefix + padding is less than 10, so we have at least another byte (byte 11) to increment
+    // if the diversifier is not valid.
+    if vanity_u8.len() > 10 {
+        println!("The prefix is too long.");
+        tx.send("".to_string()).unwrap();
+        return;
+    }
+
+    // Main loop
     loop {
         if increment(&mut seed).is_err() {
             return;
         }
 
+        let master_spk = ExtendedSpendingKey::from_path(&ExtendedSpendingKey::master(&seed),
+                            &[ChildIndex::Hardened(32), ChildIndex::Hardened(params(is_testnet).cointype), ChildIndex::Hardened(0)]);
+        let mut spkv = vec![];
+        master_spk.write(&mut spkv).unwrap();
+
+        // Construct the diversifier
         let mut dvn_u8 : [u8; 11] = [0; 11];
         dvn_u8.copy_from_slice(&seed[0..11]);
         dvn_u8.reverse();
         dvn_u8[0..vanity_u8.len()].copy_from_slice(&vanity_u8[..]);
-        println!("{:?}", dvn_u8);
+        let nd = Diversifier(dvn_u8);
 
-        let master_spk = ExtendedSpendingKey::from_path(&ExtendedSpendingKey::master(&seed),
-                            &[ChildIndex::Hardened(32), ChildIndex::Hardened(params(is_testnet).cointype), ChildIndex::Hardened(0)]);
-
-        let mut spkv = vec![];
-        master_spk.write(&mut spkv).unwrap();
-
-        let mut nd = Diversifier(dvn_u8);
-
-        let addr_result = ExtendedFullViewingKey::from(&master_spk).address_from_diversifier(nd);
+        let addr_result = address_from_diversifier(&ExtendedFullViewingKey::from(&master_spk), &nd);        
         if addr_result.is_err() {
-            println!("continuing");
-            continue;
+            if please_stop.load(Ordering::Relaxed) {
+                return
+            } else {
+                continue
+            }            
         } else {
             let addr = addr_result.unwrap();
 
@@ -226,16 +256,6 @@ pub fn vanity_thread(is_testnet: bool, entropy: &[u8], prefix: String, tx: mpsc:
             tx.send(json::stringify_pretty(wallet, 2)).unwrap();
             return;
         }
-
-        i = i + 1;
-        if i%5000 == 0 {
-            if please_stop.load(Ordering::Relaxed) {
-                return;
-            }
-            tx.send("Processed:5000".to_string()).unwrap();
-        }
-
-        if i == 0 { return; }
     }
 }
 
