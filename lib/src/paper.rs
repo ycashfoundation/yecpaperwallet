@@ -295,6 +295,10 @@ pub fn generate_vanity_wallet(is_testnet: bool, num_threads: u32, prefix: String
         Err(e) => return Err(format!("{}. Note that ['b', 'i', 'o', '1'] are not allowed in addresses.", e))
     };
 
+    if prefix.len() > 15 {
+        return Err(format!("The prefix '{}' is too long.", prefix));
+    }
+
     // Get 32 bytes of system entropy
     let mut system_rng = ChaChaRng::from_entropy();    
     
@@ -748,11 +752,19 @@ mod tests {
         assert_eq!(td.len(), 1);
         assert!(td[0]["address"].as_str().unwrap().starts_with("ytestsapling1ts"));
 
+        // Generate a long one, to make sure the fast vanity is working.
+        let td = json::parse(&generate_vanity_wallet(false, 1, "ycashf0undatl0n".to_string()).unwrap()).unwrap();
+        assert_eq!(td.len(), 1);
+        assert!(td[0]["address"].as_str().unwrap().starts_with("ys1ycashf0undatl0n"));
+
         // Test for invalid chars
         generate_vanity_wallet(false, 1, "b".to_string()).expect_err("b is not allowed");
         generate_vanity_wallet(false, 1, "o".to_string()).expect_err("o is not allowed");
         generate_vanity_wallet(false, 1, "i".to_string()).expect_err("i is not allowed");
         generate_vanity_wallet(false, 1, "1".to_string()).expect_err("1 is not allowed");
+
+        // Prefix length
+        generate_vanity_wallet(false, 1, "ycashf0ndatl0naa".to_string()).expect_err("Prefix is too long.");
     }
 
     #[test]
