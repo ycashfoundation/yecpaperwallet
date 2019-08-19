@@ -1,7 +1,10 @@
+extern crate sapling_crypto;
+extern crate pairing;
+
 use std::thread;
 use hex;
 use base58::{ToBase58, FromBase58};
-use bech32::{Bech32, u5, ToBase32};
+use bech32::{Bech32, u5, ToBase32, FromBase32};
 use rand::{Rng, ChaChaRng, FromEntropy, SeedableRng};
 use json::{array, object};
 use sha2::{Sha256, Digest};
@@ -12,7 +15,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::panic;
 use std::time::{SystemTime};
-use zcash_primitives::zip32::{DiversifierIndex, DiversifierKey, ChildIndex, ExtendedSpendingKey, ExtendedFullViewingKey};
+use zcash_primitives::zip32::{DiversifierIndex, ChildIndex, ExtendedSpendingKey, ExtendedFullViewingKey};
+use sapling_crypto::primitives::Diversifier;
 
 /// A trait for converting a [u8] to base58 encoded string.
 pub trait ToBase58Check {
@@ -142,7 +146,7 @@ fn get_bech32_for_prefix(prefix: String) -> Result<Vec<u5>, String> {
     return Ok(ans);
 }
 
-fn encode_address(spk: &ExtendedSpendingKey, is_testnet: bool) -> String {
+fn encode_default_address(spk: &ExtendedSpendingKey, is_testnet: bool) -> String {
     let (_d, addr) = spk.default_address().expect("Cannot get result");
 
     // Address is encoded as a bech32 string
@@ -166,47 +170,82 @@ fn encode_privatekey(spk: &ExtendedSpendingKey, is_testnet: bool) -> String {
     return encoded_pk;
 }
 
+use sapling_crypto::primitives::PaymentAddress;
+use zcash_primitives::JUBJUB;
+use pairing::bls12_381::Bls12;
+
+pub fn address_from_diversifier(fvk: &ExtendedFullViewingKey, nd: &Diversifier) -> Result<PaymentAddress<Bls12>, ()> {
+    match fvk.fvk.vk.into_payment_address(*nd, &JUBJUB) {
+        Some(addr) => Ok(addr),
+        None       => Err(())
+    }
+}
+
 /// A single thread that grinds through the Diversifiers to find the defualt key that matches the prefix
 pub fn vanity_thread(is_testnet: bool, entropy: &[u8], prefix: String, tx: mpsc::Sender<String>, please_stop: Arc<AtomicBool>) {
-    
+    // Create a local copy of the seed, so we can increment it between tries
     let mut seed: [u8; 32] = [0; 32];
     seed.copy_from_slice(&entropy[0..32]);
 
-    let di = DiversifierIndex::new();
-    let vanity_bytes = get_bech32_for_prefix(prefix).expect("Bad char in prefix");
+    // Convert to u5, so we can directly lookup the prefix
+    let mut vanity_bytes = get_bech32_for_prefix(prefix).expect("Bad char in prefix");
+    vanity_bytes.push(u5::try_from_u8(0).unwrap());
 
-    let master_spk = ExtendedSpendingKey::from_path(&ExtendedSpendingKey::master(&seed),
-                            &[ChildIndex::Hardened(32), ChildIndex::Hardened(params(is_testnet).cointype), ChildIndex::Hardened(0)]);
+    // The padding has to align properly. If the padding is off, we'll add "0" bytes at the end
+    let vanity_u8 = loop {
+        let r = Vec::<u8>::from_base32(&vanity_bytes);
+        if r.is_err() {
+            vanity_bytes.push(u5::try_from_u8(0).unwrap());
+            continue
+        }
+        break r.unwrap();
+    };
 
-    let mut spkv = vec![];
-    master_spk.write(&mut spkv).unwrap();
+    // Make sure the prefix + padding is less than 10, so we have at least another byte (byte 11) to increment
+    // if the diversifier is not valid.
+    if vanity_u8.len() > 10 {
+        println!("The prefix is too long.");
+        tx.send("".to_string()).unwrap();
+        return;
+    }
 
-    let mut i: u32 = 0;
+    // Main loop
     loop {
         if increment(&mut seed).is_err() {
             return;
         }
 
-        let dk = DiversifierKey::master(&seed);
-        let (_ndk, nd) = dk.diversifier(di).unwrap();
+        let master_spk = ExtendedSpendingKey::from_path(&ExtendedSpendingKey::master(&seed),
+                            &[ChildIndex::Hardened(32), ChildIndex::Hardened(params(is_testnet).cointype), ChildIndex::Hardened(0)]);
+        let mut spkv = vec![];
+        master_spk.write(&mut spkv).unwrap();
 
-        // test for nd
-        let mut isequal = true;
-        for i in 0..vanity_bytes.len() {
-            if vanity_bytes[i] != nd.0.to_base32()[i] {
-                isequal = false;
-                break;
-            }
-        }
+        // Construct the diversifier
+        let mut dvn_u8 : [u8; 11] = [0; 11];
+        dvn_u8.copy_from_slice(&seed[0..11]);
+        dvn_u8.reverse();
+        dvn_u8[0..vanity_u8.len()].copy_from_slice(&vanity_u8[..]);
+        let nd = Diversifier(dvn_u8);
 
-        if isequal { 
-            let len = spkv.len();
-            spkv[(len-32)..len].copy_from_slice(&dk.0[0..32]);
-            let spk = ExtendedSpendingKey::read(&spkv[..]).unwrap();
+        let addr_result = address_from_diversifier(&ExtendedFullViewingKey::from(&master_spk), &nd);        
+        if addr_result.is_err() {
+            if please_stop.load(Ordering::Relaxed) {
+                return
+            } else {
+                continue
+            }            
+        } else {
+            let addr = addr_result.unwrap();
 
-            
-            let encoded = encode_address(&spk, is_testnet);
-            let encoded_pk = encode_privatekey(&spk, is_testnet);
+            // Address is encoded as a bech32 string
+            let mut v = vec![0; 43];
+
+            v.get_mut(..11).unwrap().copy_from_slice(&addr.diversifier.0);
+            addr.pk_d.write(v.get_mut(11..).unwrap()).expect("Cannot write!");
+            let checked_data: Vec<u5> = v.to_base32();
+        
+            let encoded : String = Bech32::new(params(is_testnet).zaddress_prefix.into(), checked_data).expect("bech32 failed").to_string();
+            let encoded_pk = encode_privatekey(&master_spk, is_testnet);
             
             let wallet = array!{object!{
                 "num"           => 0,
@@ -217,16 +256,6 @@ pub fn vanity_thread(is_testnet: bool, entropy: &[u8], prefix: String, tx: mpsc:
             tx.send(json::stringify_pretty(wallet, 2)).unwrap();
             return;
         }
-
-        i = i + 1;
-        if i%5000 == 0 {
-            if please_stop.load(Ordering::Relaxed) {
-                return;
-            }
-            tx.send("Processed:5000".to_string()).unwrap();
-        }
-
-        if i == 0 { return; }
     }
 }
 
@@ -265,6 +294,10 @@ pub fn generate_vanity_wallet(is_testnet: bool, num_threads: u32, prefix: String
         Ok(_)  => (),
         Err(e) => return Err(format!("{}. Note that ['b', 'i', 'o', '1'] are not allowed in addresses.", e))
     };
+
+    if prefix.len() > 15 {
+        return Err(format!("The prefix '{}' is too long.", prefix));
+    }
 
     // Get 32 bytes of system entropy
     let mut system_rng = ChaChaRng::from_entropy();    
@@ -327,8 +360,8 @@ pub fn generate_vanity_wallet(is_testnet: bool, num_threads: u32, prefix: String
     return Ok(wallet);
 }
 
-/// Generate a series of `count` addresses and private keys. 
-pub fn generate_wallet(is_testnet: bool, nohd: bool, zcount: u32, tcount: u32, user_entropy: &[u8]) -> String {        
+/// Mix user and system entropy together
+pub fn mix_user_system_entropy(user_entropy: &[u8]) -> [u8; 32] {
     // Get 32 bytes of system entropy
     let mut system_entropy:[u8; 32] = [0; 32]; 
     {
@@ -353,8 +386,62 @@ pub fn generate_wallet(is_testnet: bool, nohd: bool, zcount: u32, tcount: u32, u
     let mut final_entropy: [u8; 32] = [0; 32];
     final_entropy.clone_from_slice(&double_sha256(&state.result()[..]));
 
-    // ...which will we use to seed the RNG
-    let mut rng = ChaChaRng::from_seed(final_entropy);
+    return final_entropy;
+
+}
+
+pub fn generate_diversified_addresses_from_spk(is_testnet: bool, spk: &ExtendedSpendingKey, zcount: u32) -> json::JsonValue {
+    // Output object
+    let mut addresses = array![];
+
+    let mut di = DiversifierIndex::new();
+
+    for _i in 0..zcount {
+        let (o_di, addr) = ExtendedFullViewingKey::from(spk).address(di).unwrap();
+        // Address is encoded as a bech32 string
+        let mut v = vec![0; 43];
+
+        v.get_mut(..11).unwrap().copy_from_slice(&addr.diversifier.0);
+        addr.pk_d.write(v.get_mut(11..).unwrap()).expect("Cannot write!");
+        let checked_data: Vec<u5> = v.to_base32();
+        let encoded : String = Bech32::new(params(is_testnet).zaddress_prefix.into(), checked_data).expect("bech32 failed").to_string();
+        
+        di = o_di;
+        di.increment().unwrap();
+
+        addresses.push(encoded).unwrap();
+    }
+
+    return addresses;
+}
+
+pub fn generate_diversified_addresses(is_testnet: bool, zcount: u32, user_entropy: &[u8]) -> String {
+    // Get 32 bytes of mixed entropy for the RNG
+    let mut rng = ChaChaRng::from_seed(mix_user_system_entropy(user_entropy));
+
+    let mut seed:[u8; 32] = [0; 32]; 
+    rng.fill(&mut seed);
+
+    let master_spk = ExtendedSpendingKey::from_path(&ExtendedSpendingKey::master(&seed),
+                            &[ChildIndex::Hardened(32), ChildIndex::Hardened(params(is_testnet).cointype), ChildIndex::Hardened(0)]);
+    
+    let ans = object!{
+        "type"          => "zaddr",
+        "private_key"   => encode_privatekey(&master_spk, is_testnet),
+        "seed"          => object!{
+            "HDSeed"    => hex::encode(seed),
+            "path"      => format!("m/32'/{}'/{}'", params(is_testnet).cointype, 0)
+        },
+        "addresses"     => generate_diversified_addresses_from_spk(is_testnet, &master_spk, zcount)
+    };
+
+    return json::stringify_pretty(ans, 2);
+}
+
+/// Generate a series of `count` addresses and private keys. 
+pub fn generate_wallet(is_testnet: bool, nohd: bool, zcount: u32, tcount: u32, user_entropy: &[u8]) -> String {        
+    // Get 32 bytes of mixed entropy for the RNG
+    let mut rng = ChaChaRng::from_seed(mix_user_system_entropy(user_entropy));
 
     if !nohd {
         // Allow HD addresses, so use only 1 seed        
@@ -467,7 +554,7 @@ fn get_zaddress(is_testnet: bool, seed: &[u8], index: u32) -> (String, String, S
         "path"      => format!("m/32'/{}'/{}'", params(is_testnet).cointype, index)
     };
 
-    let encoded = encode_address(&spk, is_testnet);
+    let encoded = encode_default_address(&spk, is_testnet);
     let encoded_pk = encode_privatekey(&spk, is_testnet);
 
     // Viewing Key is encoded as bech32 string
@@ -536,7 +623,7 @@ mod tests {
 
     #[test]
     fn test_z_encoding() {
-        use crate::paper::{encode_address, encode_privatekey};
+        use crate::paper::{encode_default_address, encode_privatekey};
         use zcash_primitives::zip32::ExtendedSpendingKey;
 
         let main_data = "[
@@ -549,7 +636,7 @@ mod tests {
             let e = hex::decode(i["encoded"].as_str().unwrap()).unwrap();
             let spk = ExtendedSpendingKey::read(&e[..]).unwrap();
 
-            assert_eq!(encode_address(&spk, false), i["address"]);
+            assert_eq!(encode_default_address(&spk, false), i["address"]);
             assert_eq!(encode_privatekey(&spk, false), i["pk"]);
         }
 
@@ -565,7 +652,7 @@ mod tests {
             let e = hex::decode(i["encoded"].as_str().unwrap()).unwrap();
             let spk = ExtendedSpendingKey::read(&e[..]).unwrap();
 
-            assert_eq!(encode_address(&spk, true), i["address"]);
+            assert_eq!(encode_default_address(&spk, true), i["address"]);
             assert_eq!(encode_privatekey(&spk, true), i["pk"]);
         }
     }
@@ -665,11 +752,19 @@ mod tests {
         assert_eq!(td.len(), 1);
         assert!(td[0]["address"].as_str().unwrap().starts_with("ytestsapling1ts"));
 
+        // Generate a long one, to make sure the fast vanity is working.
+        let td = json::parse(&generate_vanity_wallet(false, 1, "ycashf0undatl0n".to_string()).unwrap()).unwrap();
+        assert_eq!(td.len(), 1);
+        assert!(td[0]["address"].as_str().unwrap().starts_with("ys1ycashf0undatl0n"));
+
         // Test for invalid chars
         generate_vanity_wallet(false, 1, "b".to_string()).expect_err("b is not allowed");
         generate_vanity_wallet(false, 1, "o".to_string()).expect_err("o is not allowed");
         generate_vanity_wallet(false, 1, "i".to_string()).expect_err("i is not allowed");
         generate_vanity_wallet(false, 1, "1".to_string()).expect_err("1 is not allowed");
+
+        // Prefix length
+        generate_vanity_wallet(false, 1, "ycashf0ndatl0naa".to_string()).expect_err("Prefix is too long.");
     }
 
     #[test]
@@ -718,6 +813,53 @@ mod tests {
             assert_eq!(a, testdata[i][0]);
             assert_eq!(sk, testdata[i][1]);
         }
+    }
+
+    #[test]
+    fn test_diversified_addresses() {
+        use crate::paper::*;
+        use std::str::FromStr;
+        use bech32::{Bech32, FromBase32};
+
+        let pk = "secret-extended-key-main1qd3dtt7fqqqqpqr07ydnreul39a7zcug8slnjep5dpvv0wx23clyuvw0d5m99ywswmxm2spu0wk3ejz4qpspde3k8sh5r6tgyeu86q09m820sn77atlszyjytxwxthkpufh7dmsl3cpep0hk8gw47xkz4dharfrx9d0xx4cytmwcqpdezumh3vpkt3ysf3u77zh63qpp8cwwr027tsytgq657fthdq96vwyf9rjahxf52pq7x8nljgzn683hrjj2srxpflpdx2e6sagzm5uv5";
+        let addrs = ["ys15exsk9vlvty6esfu83m8y763emj7cnegq5jq25kztl0rh0fly8fez6x736p9xpa8w6lmxpwwe8l",
+                     "ys1f2lerynegsx7upgaa8zk9ndd3enc06cjm5pc4tlhx6gjs6tsdmg22uuk3wnep269uwyykvxl76d",
+                     "ys1ajxsqwszd92kj9pxczf5wseytpqesvt220uslc6u35lhqh6xlx3aseevk0k67n4xt84cygafe3s", 
+                     "ys100h9wekwvt6cxkcyfv6yf30srpuvzuft6nnex23whs768gkvvk0c6v37hzevqx87lfwkzlpkmeg",
+                     "ys1c9l9kx5ggp2xwjn3fhhlaqgmc5ffkrcuw5dcu34fx7csc4yz878k7e9ahgmntxywwdt36c3hw3u",
+                     "ys1a3xdskmv692hngtl8c7pm8c7yaapjgyqqkdw208vkqzkexhm0rhzjw7dcm6ve4g9lv83ucez3zy"];
+
+        let pk_data = Vec::from_base32(&Bech32::from_str(pk).unwrap().data()[..]).unwrap();
+        let spk = ExtendedSpendingKey::read(&pk_data[..]).unwrap();
+
+        assert_eq!(addrs[0], encode_default_address(&spk, false));
+
+        let div_addrs = generate_diversified_addresses_from_spk(false, &spk, addrs.len() as u32);
+
+        for i in 0..addrs.len() {
+            assert_eq!(addrs[i], div_addrs[i].as_str().unwrap());
+        }
+
+        // 0-seeded, for predictable outcomes
+        let seed : [u8; 32] = [0; 32];
+
+        let known_good = object!{
+            "type"=> "zaddr",
+            "private_key"=> "secret-extended-key-main1q0jcscyrqqqqpqxh2lpsn8c5x4pkzkmdmrszkg3zwpgeuvg2gxcnum8ce7cgkmm6gm45kvme3k2d0hdg0p4p68ljs440kwx0cdqqtnxvna6zwanthljqxxskmn0pnrz5vpddy0kyafdyhawmk0fq57867kqj24kgk7dq8vs93jewhm9jnhn0khja4elly3t8evv3smkufklrfc775h6d5e8ckpk0sz2znfps0zcc8078p30lp4c5ycs0rnuqz7z4wentzr3f2xjnndcenrjjp",
+            "seed"=> object!{
+                "HDSeed"=> "f0ab58fc49df9b6b9c3a881ab4db400ef1263f25329f0f92a9a9468b4acde0cd",
+                "path"=> "m/32'/347'/0'"
+            },
+            "addresses"=> array!{
+                "ys1g5y8s4p2h4h0wd3mr56z4e4q72ka7kw4x6gy9tgutdn3xwflp29vd4adrvyryv6sxt6scjw5yvt",
+                "ys1xxpyxsxp2m2cv96y2lmcqdt50v9jhvazvfm2y2e5gwc8nux9grfy7lqscp37ww54anjf7z20yke",
+                "ys1d5kcl4rxcf70dxnt73cjxy8zwn25cef5mae40vgrdk4djw3yae4nchkxt2ms3aps8a67sfx7t9s",
+                "ys1wvrvyp6gr0ryzpejysr24m22k4xvqf8c72y8uj4pquk5u5vj4e23x9t67nkv24wc3z23gq90kzz",
+                "ys1dv79f3c466n6qncxzwzmf7wd965un65ghycax67z8uffftg9ulpnd08ulhyr5u73z0tasa5qspq"
+            }
+        };
+
+        assert_eq!(json::stringify_pretty(known_good, 2), generate_diversified_addresses(false, 5, &seed));
     }
 
     /**

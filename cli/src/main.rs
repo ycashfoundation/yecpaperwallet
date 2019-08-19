@@ -67,6 +67,16 @@ fn main() {
                         Ok(_)   => return Ok(()),
                         Err(_)  => return Err(format!("Number of addresses '{}' is not a number", i))
                 }))
+        .arg(Arg::with_name("diversified_addresses")
+                .short("d")
+                .long("diversified")
+                .help("Number of diversified addresses to generate")
+                .takes_value(true)
+                .default_value("0")
+                .validator(|i:String| match i.parse::<i32>() {
+                        Ok(_)   => return Ok(()),
+                        Err(_)  => return Err(format!("Number of addresses '{}' is not a number", i))
+                }))
        .get_matches();  
 
     let is_testnet: bool = matches.is_present("testnet");
@@ -98,6 +108,8 @@ fn main() {
 
     // Number of z addresses to generate
     let z_addresses = matches.value_of("z_addresses").unwrap().parse::<u32>().unwrap();    
+
+    let diversified_addresses = matches.value_of("diversified_addresses").unwrap().parse::<u32>().unwrap();
 
     let addresses = if !matches.value_of("vanity_prefix").is_none() {
         if z_addresses != 1 {
@@ -141,12 +153,21 @@ fn main() {
             entropy.extend(matches.value_of("entropy").unwrap().as_bytes());
         }
 
-        print!("Generating {} Sapling addresses and {} Transparent addresses...", z_addresses, t_addresses);
-        io::stdout().flush().ok();
-        let addresses = generate_wallet(is_testnet, nohd, z_addresses, t_addresses, &entropy); 
-        println!("[OK]");
+        if diversified_addresses == 0 {
+            print!("Generating {} Sapling addresses and {} Transparent addresses...", z_addresses, t_addresses);
+            io::stdout().flush().ok();
+            let addresses = generate_wallet(is_testnet, nohd, z_addresses, t_addresses, &entropy); 
+            println!("[OK]");
 
-        addresses
+            addresses
+        } else {
+            print!("Generating {} diversified addresses...", diversified_addresses);
+            io::stdout().flush().ok();
+            let addresses = generate_diversified_addresses(is_testnet, diversified_addresses, &entropy); 
+            println!("[OK]");
+
+            addresses
+        }
     };
 
     // If the default format is present, write to the console if the filename is absent
