@@ -859,27 +859,6 @@ mod tests {
         for i in 0..addrs.len() {
             assert_eq!(addrs[i], div_addrs[i].as_str().unwrap());
         }
-
-        // 0-seeded, for predictable outcomes
-        let seed : [u8; 32] = [0; 32];
-
-        let known_good = object!{
-            "type"=> "zaddr",
-            "private_key"=> "secret-extended-key-main1q0jcscyrqqqqpqxh2lpsn8c5x4pkzkmdmrszkg3zwpgeuvg2gxcnum8ce7cgkmm6gm45kvme3k2d0hdg0p4p68ljs440kwx0cdqqtnxvna6zwanthljqxxskmn0pnrz5vpddy0kyafdyhawmk0fq57867kqj24kgk7dq8vs93jewhm9jnhn0khja4elly3t8evv3smkufklrfc775h6d5e8ckpk0sz2znfps0zcc8078p30lp4c5ycs0rnuqz7z4wentzr3f2xjnndcenrjjp",
-            "seed"=> object!{
-                "HDSeed"=> "f0ab58fc49df9b6b9c3a881ab4db400ef1263f25329f0f92a9a9468b4acde0cd",
-                "path"=> "m/32'/347'/0'"
-            },
-            "addresses"=> array!{
-                "ys1g5y8s4p2h4h0wd3mr56z4e4q72ka7kw4x6gy9tgutdn3xwflp29vd4adrvyryv6sxt6scjw5yvt",
-                "ys1xxpyxsxp2m2cv96y2lmcqdt50v9jhvazvfm2y2e5gwc8nux9grfy7lqscp37ww54anjf7z20yke",
-                "ys1d5kcl4rxcf70dxnt73cjxy8zwn25cef5mae40vgrdk4djw3yae4nchkxt2ms3aps8a67sfx7t9s",
-                "ys1wvrvyp6gr0ryzpejysr24m22k4xvqf8c72y8uj4pquk5u5vj4e23x9t67nkv24wc3z23gq90kzz",
-                "ys1dv79f3c466n6qncxzwzmf7wd965un65ghycax67z8uffftg9ulpnd08ulhyr5u73z0tasa5qspq"
-            }
-        };
-
-        assert_eq!(json::stringify_pretty(known_good, 2), generate_diversified_addresses(false, 5, &seed));
     }
 
     /**
