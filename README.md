@@ -1,5 +1,5 @@
 # yecpaperwallet
-yecpaperwallet is a Zcash Sapling paper wallet generator that can run completely offline. You can run it on an air-gapped computer to generate your shielded z-addresses, which will allow you to keep your keys completely offline. 
+yecpaperwallet is a Ycash Sapling paper wallet generator that can run completely offline. You can run it on an air-gapped computer to generate your shielded z-addresses, which will allow you to keep your keys completely offline. 
 
 *Example:*
 ![Paper Wallet](docs/yecpaperwallet.png?raw=true)
